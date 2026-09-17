@@ -3,7 +3,10 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
-@router.post(`"/transcribe`")
+
+@router.post("/transcribe")
 async def transcribe():
     # TODO: call Azure AI Speech Speech-to-Text
-    return {`"text`": `"TODO`"}
+    return {
+        "text": "TODO"
+    }

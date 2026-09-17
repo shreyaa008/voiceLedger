@@ -5,6 +5,6 @@ from typing import Literal
 class Transaction(BaseModel):
     customer: str
     amount: float
-    type: Literal[`"credit`", `"payment`"]
+    type: Literal["credit", "payment"]
     date: date
-    language: Literal[`"hi`", `"en`"]
+    language: Literal["hi", "en"]
