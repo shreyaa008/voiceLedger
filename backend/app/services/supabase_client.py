@@ -1,4 +1,4 @@
-﻿# TODO: Supabase client setup (use SUPABASE_URL / SUPABASE_KEY from .env)
+# TODO: Supabase client setup (use SUPABASE_URL / SUPABASE_KEY from .env)
 import os
 
 from dotenv import load_dotenv
@@ -6,6 +6,8 @@ from supabase import Client, create_client
 
 
 load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), "../../.env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), "../../../.env"))
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")

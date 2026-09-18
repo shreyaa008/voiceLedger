@@ -1,48 +1,53 @@
 """
 Tool: get_customer_ledger
-Fetches customer balance and transaction history.
+Fetches customer balance and transaction history directly from Supabase.
 """
 
+import os
+from dotenv import load_dotenv
+
+from backend.app.services.supabase_client import supabase
+
+
 def get_customer_ledger(customer_name: str) -> dict:
-    """Fetch customer balance and transaction history."""
-    normalized_name = customer_name.strip().title()
-    
-    # Mock data for Day 2 testing
-    mock_ledgers = {
-        "Ramesh": {
-            "customer": "Ramesh",
+    """Fetch customer balance and transaction history from Supabase database."""
+    try:
+        normalized_name = customer_name.strip().title()
+        
+        # 1. Query customer by name
+        cust_res = supabase.table("customers").select("id, name").ilike("name", normalized_name).execute()
+        
+        if not cust_res.data or len(cust_res.data) == 0:
+            return {
+                "customer": customer_name,
+                "found": False,
+                "net_balance": 0.0,
+                "transactions": []
+            }
+        
+        customer = cust_res.data[0]
+        customer_id = customer["id"]
+        
+        # 2. Query transactions for customer
+        tx_res = supabase.table("transactions").select("*").eq("customer_id", customer_id).order("date", desc=True).execute()
+        transactions = tx_res.data or []
+        
+        # 3. Calculate net balance: SUM(credit) - SUM(payment)
+        credits = sum(float(t.get("amount", 0)) for t in transactions if t.get("type") == "credit")
+        payments = sum(float(t.get("amount", 0)) for t in transactions if t.get("type") == "payment")
+        net_balance = credits - payments
+        
+        return {
+            "customer": customer["name"],
             "found": True,
-            "net_balance": 1500.0,
-            "transactions": [
-                {"id": "t-1", "amount": 2000.0, "type": "credit", "date": "2026-08-15", "due_date": "2026-09-01"},
-                {"id": "t-2", "amount": 500.0, "type": "payment", "date": "2026-08-25", "due_date": None}
-            ]
-        },
-        "Suresh": {
-            "customer": "Suresh",
-            "found": True,
-            "net_balance": 12000.0,
-            "transactions": [
-                {"id": "t-3", "amount": 12000.0, "type": "credit", "date": "2026-06-10", "due_date": "2026-07-10"}
-            ]
-        },
-        "Priya": {
-            "customer": "Priya",
-            "found": True,
-            "net_balance": 0.0,
-            "transactions": [
-                {"id": "t-4", "amount": 1000.0, "type": "credit", "date": "2026-09-01", "due_date": "2026-09-15"},
-                {"id": "t-5", "amount": 1000.0, "type": "payment", "date": "2026-09-10", "due_date": None}
-            ]
+            "net_balance": round(float(net_balance), 2),
+            "transactions": transactions
         }
-    }
-
-    if normalized_name in mock_ledgers:
-        return mock_ledgers[normalized_name]
-
-    return {
-        "customer": customer_name,
-        "found": False,
-        "net_balance": 0.0,
-        "transactions": []
-    }
+    except Exception as e:
+        return {
+            "customer": customer_name,
+            "found": False,
+            "net_balance": 0.0,
+            "transactions": [],
+            "error": str(e)
+        }
