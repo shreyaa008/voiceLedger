@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import transcribe, extract, transactions, speak, agent
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import (
     transcribe,
@@ -7,15 +7,16 @@ from app.routers import (
     transactions,
     speak,
     translation,
-    agent
+    agent,
+    voice_live,
+    dashboard,
 )
 
 app = FastAPI(
     title="VoiceLedger API",
     description="Backend API for the VoiceLedger AI bookkeeping application",
-    version="1.0.0"
+    version="1.0.0",
 )
-from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,21 +32,15 @@ app.include_router(transactions.router)
 app.include_router(speak.router)
 app.include_router(translation.router)
 app.include_router(agent.router)
+app.include_router(voice_live.router)
+app.include_router(dashboard.router)
 
 
 @app.get("/")
 async def root():
-    return {
-        "status": "VoiceLedger API running"
-    }
+    return {"status": "VoiceLedger API running"}
 
 
 @app.get("/health")
 async def health_check():
-    return {
-        "status": "healthy"
-    }
-    
-from app.routers import transcribe, extract, transactions, speak, translation, agent, voice_live
-...
-app.include_router(voice_live.router)
+    return {"status": "healthy"}

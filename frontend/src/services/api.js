@@ -1,7 +1,10 @@
-// TODO: functions that call our FastAPI backend, e.g.:
-// export async function transcribeAudio(blob) { ... }
+// frontend/src/services/api.js
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 export default API_BASE;
+
+// Same host as API_BASE, just ws(s):// instead of http(s):// — used by the
+// Ask call UI to reach /ws/voice.
+export const WS_BASE = API_BASE.replace(/^http/, "ws");
 
 // Send a recorded utterance (WAV blob) to Azure AI Speech for transcription.
 export async function transcribeAudio(blob) {
@@ -65,4 +68,53 @@ export async function processTransaction(text, language, shopkeeperId) {
   }
 
   return res.json(); // { success, customer_created, customer, transaction }
+}
+
+// ---------- Ledger & Risk screens ----------
+
+// Every customer with balance + risk, plus "You'll Get / You'll Give" totals.
+export async function getDashboardSummary(shopkeeperId) {
+  const res = await fetch(
+    `${API_BASE}/dashboard/summary?shopkeeper_id=${encodeURIComponent(shopkeeperId)}`
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Could not load your ledger");
+  }
+
+  return res.json(); // { totals, risk_counts, customers: [...] }
+}
+
+// All entries (udhaar + payments) for one customer.
+export async function getCustomerLedger(customerId) {
+  const res = await fetch(`${API_BASE}/customers/${encodeURIComponent(customerId)}/ledger`);
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Could not load this customer's entries");
+  }
+
+  return res.json(); // { customer_id, transactions: [...] }
+}
+
+// Ready-to-send payment reminder text.
+export async function generateReminder(shopkeeperId, customerId, tone, language) {
+  const res = await fetch(`${API_BASE}/dashboard/reminder`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      shopkeeper_id: shopkeeperId,
+      customer_id: customerId,
+      tone,
+      language,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Could not create the reminder");
+  }
+
+  return res.json(); // { customer, phone, amount_due, days_overdue, reminder_text, ... }
 }

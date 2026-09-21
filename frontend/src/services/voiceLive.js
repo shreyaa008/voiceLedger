@@ -9,12 +9,17 @@
 const TARGET_SAMPLE_RATE = 24000;
 
 export class VoiceLiveClient {
-  constructor({ wsUrl, onTranscript, onAssistantText, onError, onStatusChange }) {
+  constructor({ wsUrl, onTranscript, onAssistantText, onError, onStatusChange, onToolActivity }) {
     this.wsUrl = wsUrl;
     this.onTranscript = onTranscript;
     this.onAssistantText = onAssistantText;
     this.onError = onError;
     this.onStatusChange = onStatusChange;
+    // Fired when the backend calls one of the MCP tools (get_customer_ledger,
+    // check_risk, ...) to ground its answer — lets the call UI show something
+    // like "checking Utkarsh's ledger..." instead of a silent pause.
+    // Payload: { type: "tool_call" | "tool_result", name, arguments?, data? }
+    this.onToolActivity = onToolActivity;
 
     this.ws = null;
 
@@ -77,6 +82,8 @@ export class VoiceLiveClient {
       this.onTranscript?.(payload.text);
     } else if (payload.type === "assistant_text") {
       this.onAssistantText?.(payload.text);
+    } else if (payload.type === "tool_call" || payload.type === "tool_result") {
+      this.onToolActivity?.(payload);
     } else if (payload.type === "error") {
       this.onError?.(payload.message);
     }
