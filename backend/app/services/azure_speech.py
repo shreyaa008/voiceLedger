@@ -124,3 +124,65 @@ def synthesize_speech(text: str, language: str = "en") -> bytes:
         )
 
     raise RuntimeError("Unknown speech synthesis result")
+def translate_speech(
+    file_path: str,
+    from_language: str,
+    to_language: str
+) -> dict:
+
+    speech_key = os.getenv("AZURE_SPEECH_KEY")
+    speech_region = os.getenv("AZURE_SPEECH_REGION")
+
+    if not speech_key:
+        raise RuntimeError("AZURE_SPEECH_KEY is missing from .env")
+
+    if not speech_region:
+        raise RuntimeError("AZURE_SPEECH_REGION is missing from .env")
+
+    translation_config = speechsdk.translation.SpeechTranslationConfig(
+        subscription=speech_key,
+        region=speech_region
+    )
+
+    translation_config.speech_recognition_language = from_language
+    translation_config.add_target_language(to_language)
+
+    audio_config = speechsdk.audio.AudioConfig(
+        filename=file_path
+    )
+
+    recognizer = speechsdk.translation.TranslationRecognizer(
+        translation_config=translation_config,
+        audio_config=audio_config
+    )
+
+    result = recognizer.recognize_once_async().get()
+
+    if result.reason == speechsdk.ResultReason.TranslatedSpeech:
+
+        translated_text = result.translations.get(to_language)
+
+        return {
+            "original_text": result.text,
+            "translated_text": translated_text,
+            "source_language": from_language,
+            "target_language": to_language
+        }
+
+    if result.reason == speechsdk.ResultReason.NoMatch:
+        raise RuntimeError(
+            "No speech could be recognized"
+        )
+
+    if result.reason == speechsdk.ResultReason.Canceled:
+
+        cancellation = result.cancellation_details
+
+        raise RuntimeError(
+            f"Speech translation canceled: "
+            f"{cancellation.error_details}"
+        )
+
+    raise RuntimeError(
+        "Unknown speech translation result"
+    )
