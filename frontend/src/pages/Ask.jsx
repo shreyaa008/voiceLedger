@@ -1,4 +1,4 @@
-﻿export default function Ask() {
+export default function Ask() {
   return (
     <div className="page">
       <div className="page-header">
