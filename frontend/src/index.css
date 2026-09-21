@@ -404,6 +404,57 @@ body {
   gap: 10px;
 }
 
+/* ---------- Entry log (session feed on Home) ---------- */
+
+.entry-log {
+  margin-top: 20px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.entry-log-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.entry-log-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  animation: cardSlideUp 0.25s ease-out;
+}
+
+.entry-log-customer {
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.entry-log-amount {
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+.badge-credit {
+  background: rgba(196, 90, 74, 0.12);
+  color: var(--danger, #c45a4a);
+}
+
+.badge-payment {
+  background: rgba(58, 122, 90, 0.12);
+  color: var(--primary-dark);
+}
+
 /* ---------- Toast ---------- */
 
 .toast {
@@ -411,6 +462,9 @@ body {
   top: 20px;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
   background: var(--primary-dark);
   color: white;
   padding: 12px 20px;
@@ -419,6 +473,17 @@ body {
   box-shadow: var(--shadow-lg);
   z-index: 100;
   animation: toastIn 0.3s ease-out;
+}
+
+.toast-action {
+  background: none;
+  border: none;
+  color: var(--accent-saffron, #f2c14e);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 /* ---------- Hover card (ready for later) ---------- */
