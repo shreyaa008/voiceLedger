@@ -16,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from agent.mcp_server import call_tool
+from agent.agent_config import run_foundry_agent
 
 router = APIRouter()
 
@@ -50,17 +51,31 @@ def extract_customer_name(question: str) -> Optional[str]:
 
 
 def process_agent_query(question: str, language: str = "hi") -> dict:
-    """Process shopkeeper question with MCP tools and return grounded responses."""
+    """Process shopkeeper question with Foundry Agent or fallback MCP tool dispatcher."""
+    # 1. Try running through Microsoft Foundry / Azure OpenAI if credentials exist
+    foundry_res = run_foundry_agent(question, language)
+    if foundry_res is not None:
+        return foundry_res
+
     q_lower = question.lower()
     is_hindi = (language == "hi") or any(w in q_lower for w in ["ka", "ki", "hai", "kitna", "baaki", "kiska", "udhaar", "bhejo", "batao"])
     
     cust_name = extract_customer_name(question)
 
+
     # 1. Aggregate Queries (e.g. "sabse zyada udhaar")
     if any(w in q_lower for w in ["sabse zyada", "highest", "top", "total", "sabse bada"]):
         data = call_tool("search_transactions", {})
-        answer = "Sabse zyada udhaar Suresh ka hai (₹12,000)." if is_hindi else "Suresh has the highest outstanding balance of ₹12,000."
+        top = data.get("top_debtor", {})
+        top_name = top.get("customer", "None")
+        top_bal = top.get("balance_rupees", 0.0)
+        
+        if top_name != "None" and top_bal > 0:
+            answer = f"Sabse zyada udhaar {top_name} ka hai (₹{int(top_bal)})." if is_hindi else f"{top_name} has the highest outstanding balance of ₹{int(top_bal)}."
+        else:
+            answer = "Filhal kisi customer ka udhaar baaki nahi hai." if is_hindi else "No customer currently has an outstanding balance."
         return {"answer": answer, "tool_called": "search_transactions", "data": data}
+
 
     # 2. Risk Check Queries
     if any(w in q_lower for w in ["risk", "safe", "khatra"]):

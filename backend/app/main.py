@@ -1,4 +1,5 @@
-﻿from fastapi import FastAPI
+from fastapi import FastAPI
+from app.routers import transcribe, extract, transactions, speak, agent
 
 from app.routers import (
     transcribe,
