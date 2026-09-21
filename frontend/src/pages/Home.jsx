@@ -2,19 +2,39 @@
 import MicButton from "../components/MicButton.jsx";
 import ConfirmationCard from "../components/ConfirmationCard.jsx";
 import Toast from "../components/Toast.jsx";
+import { processTransaction } from "../services/api";
+
+// TODO: replace with a real logged-in shopkeeper once auth exists.
+// For now, grab an existing row's id from the "shopkeepers" table in
+// Supabase (Table Editor), or insert one manually, and paste it here.
+const DEMO_SHOPKEEPER_ID = "PASTE-A-REAL-SHOPKEEPER-UUID-HERE";
 
 export default function Home() {
   const [transcript, setTranscript] = useState("");
+  const [assistantReply, setAssistantReply] = useState("");
   const [toastMsg, setToastMsg] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  function handleConfirm() {
-    setToastMsg("Saved: " + transcript);
-    setTranscript("");
-    setTimeout(() => setToastMsg(""), 2500);
+  async function handleConfirm() {
+    setSaving(true);
+    try {
+      const result = await processTransaction(transcript, "hi", DEMO_SHOPKEEPER_ID);
+      setToastMsg(
+        `Saved: ₹${result.transaction.amount} for ${result.customer.name}`
+      );
+      setTranscript("");
+      setAssistantReply("");
+    } catch (err) {
+      setToastMsg("Could not save: " + err.message);
+    } finally {
+      setSaving(false);
+      setTimeout(() => setToastMsg(""), 3000);
+    }
   }
 
   function handleCancel() {
     setTranscript("");
+    setAssistantReply("");
   }
 
   return (
@@ -31,6 +51,8 @@ export default function Home() {
           </p>
         )}
 
+        {assistantReply && <p className="hero-hint">{assistantReply}</p>}
+
         <ConfirmationCard
           text={transcript}
           onConfirm={handleConfirm}
@@ -38,7 +60,10 @@ export default function Home() {
         />
       </div>
 
-      <MicButton onRecordingComplete={setTranscript} />
+      <MicButton
+        onTranscript={setTranscript}
+        onAssistantReply={setAssistantReply}
+      />
     </div>
   );
 }

@@ -1,8 +1,8 @@
-﻿from fastapi import APIRouter, HTTPException
+﻿# POST /extract — entity extraction from transcribed text (Azure AI Language)
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services.azure_language import extract_transaction
-
 
 router = APIRouter()
 
@@ -14,21 +14,11 @@ class ExtractRequest(BaseModel):
 
 @router.post("/extract")
 async def extract(request: ExtractRequest):
-
     try:
-        transaction = extract_transaction(
-            request.text,
-            request.language
-        )
-
+        result = extract_transaction(request.text, request.language)
         return {
             "success": True,
-            "text": request.text,
-            "transaction": transaction
+            **result
         }
-
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=500, detail=str(e))

@@ -1,36 +1,67 @@
-﻿import { useState } from "react";
+﻿import { useState, useRef, useCallback } from "react";
+import { VoiceLiveClient } from "../services/voiceLive";
 
-export default function MicButton({ onRecordingComplete }) {
+const WS_URL = "ws://localhost:8000/ws/voice";
+
+export default function MicButton({ onTranscript, onAssistantReply }) {
   const [isRecording, setIsRecording] = useState(false);
+  const [status, setStatus] = useState("idle");
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const clientRef = useRef(null);
 
-  function startRecording() {
+  const startRecording = useCallback(async () => {
     setIsRecording(true);
-  }
+    setStatus("connecting");
+    setLiveTranscript("");
 
-  function stopAndConfirm() {
-    setIsRecording(false);
-    onRecordingComplete("Ramesh ne 500 rupaye ka udhaar liya");
-  }
+    const client = new VoiceLiveClient({
+      wsUrl: WS_URL,
+      onStatusChange: (s) => setStatus(s),
+      onTranscript: (text) => {
+        setLiveTranscript(text);
+        onTranscript?.(text);
+      },
+      onAssistantText: (text) => {
+        onAssistantReply?.(text);
+      },
+      onError: (msg) => {
+        console.error("Voice Live error:", msg);
+        setStatus("error");
+      },
+    });
 
-  function cancelRecording() {
+    clientRef.current = client;
+    await client.start();
+  }, [onTranscript, onAssistantReply]);
+
+  const stopRecording = useCallback(() => {
     setIsRecording(false);
-  }
+    clientRef.current?.stop();
+    clientRef.current = null;
+  }, []);
 
   return (
     <>
-      {isRecording && <div className="mic-overlay" onClick={cancelRecording} />}
+      {isRecording && <div className="mic-overlay" onClick={stopRecording} />}
 
       <div className="mic-dock">
         {!isRecording && <div className="mic-tooltip">Tap to speak</div>}
 
         {isRecording ? (
           <div className="mic-recording-stack">
-            <span className="mic-state-label">Listening...</span>
+            <span className="mic-state-label">
+              {status === "connected" ? "Listening..." : status}
+            </span>
+
+            {liveTranscript && (
+              <span className="mic-live-transcript">{liveTranscript}</span>
+            )}
+
             <div className="mic-actions">
               <div className="mic-fab-wrap">
                 <button
                   className="mic-fab recording"
-                  onClick={stopAndConfirm}
+                  onClick={stopRecording}
                   aria-label="Tap to finish"
                 >
                   <div className="mic-waveform">
@@ -42,7 +73,9 @@ export default function MicButton({ onRecordingComplete }) {
                   </div>
                 </button>
               </div>
-              <button className="mic-cancel" onClick={cancelRecording} aria-label="Cancel">✕</button>
+              <button className="mic-cancel" onClick={stopRecording} aria-label="Cancel">
+                ✕
+              </button>
             </div>
             <span className="mic-tooltip">Tap to finish</span>
           </div>
