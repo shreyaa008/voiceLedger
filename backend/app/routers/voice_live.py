@@ -1,16 +1,24 @@
 # WebSocket bridge: Browser mic  <->  FastAPI  <->  Azure Voice Live
 #
 # Replaces pyaudio (physical mic/speaker) with a WebSocket connection
-# to the browser. Reuses the exact session config from voice_assistant.py.
+# to the browser. This is the ASK pipeline — full-duplex conversational
+# voice, grounded in real ledger data via the MCP tools below. (Entries
+# use a separate, lighter batch-STT pipeline — see routers/transcribe.py
+# and routers/transactions.py — Voice Live is deliberately not used there.)
 #
 # Frontend connects to:  ws://localhost:8000/ws/voice
 # Frontend sends:   binary WebSocket messages, each one a chunk of
 #                    16-bit PCM audio at 24kHz, mono (same format
 #                    Voice Live expects from pyaudio today)
-# Frontend receives: binary WebSocket messages = audio to play back
+# Frontend receives: binary WebSocket messages = audio to play back,
+#                     plus JSON messages for transcript/tool/error events.
 
+import asyncio
 import base64
+import json
 import os
+import sys
+from pathlib import Path
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
@@ -22,6 +30,8 @@ from azure.ai.voicelive.models import (
     AudioNoiseReduction,
     AzureStandardVoice,
     AudioInputTranscriptionOptions,
+    FunctionCallOutputItem,
+    FunctionTool,
     InputAudioFormat,
     Modality,
     OutputAudioFormat,
@@ -30,33 +40,60 @@ from azure.ai.voicelive.models import (
     AzureSemanticVadMultilingual,
 )
 
+# Ensure project root is in sys.path when running from backend directory
+# (same pattern as routers/agent.py, since this also calls into agent/).
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from agent.mcp_server import list_tools, call_tool
+from agent.agent_config import get_system_prompt
+
 load_dotenv()
 router = APIRouter()
 
 
+def build_tools() -> list:
+    """Expose the same MCP tools the text agent uses (agent/mcp_server.py),
+    so Voice Live answers are grounded in real Supabase data instead of the
+    model improvising a number."""
+    return [
+        FunctionTool(
+            name=tool["name"],
+            description=tool["description"],
+            parameters=tool["inputSchema"],
+        )
+        for tool in list_tools()
+    ]
+
+
 def build_session() -> RequestSession:
-    """Same session config as voice_assistant.py, just pulled into its own function."""
+    """Same session config as voice_assistant.py, plus the MCP tools."""
+    instructions = (
+        get_system_prompt()
+        + "\n\n## Voice call rules\n"
+        + "You are speaking with the shopkeeper live, over voice, in a phone call. "
+        "You understand Hindi, English and Hinglish. "
+        "LANGUAGE RULE: If the user speaks Hindi, answer in Hindi. "
+        "If the user speaks English, answer in English. "
+        "If the user speaks Hinglish, answer naturally in Hinglish. "
+        "Never translate Hindi to English unless explicitly asked. "
+        "Keep answers short and conversational, like a real spoken reply — "
+        "no bullet points, no reading out raw JSON. "
+        "Always call the relevant tool before answering a question about a "
+        "customer, balance, risk, or reminder — never guess a number."
+    )
+
     return RequestSession(
         modalities=[Modality.TEXT, Modality.AUDIO],
-        instructions=(
-            "You are VoiceLedger, an AI bookkeeping assistant for Indian shopkeepers. "
-            "You help users manage customers, credits, payments, balances and ledgers. "
-            "You understand Hindi, English and Hinglish. "
-            "LANGUAGE RULE: If the user speaks Hindi, answer in Hindi. "
-            "If the user speaks English, answer in English. "
-            "If the user speaks Hinglish, answer naturally in Hinglish. "
-            "Never translate Hindi to English unless explicitly asked. "
-            "Keep answers concise. For bookkeeping requests, clearly identify "
-            "customer name, amount and transaction type. "
-            "Do not invent transaction information."
-        ),
+        instructions=instructions,
         voice=AzureStandardVoice(name="en-US-Ava:DragonHDLatestNeural"),
         input_audio_format=InputAudioFormat.PCM16,
         output_audio_format=OutputAudioFormat.PCM16,
         input_audio_transcription=AudioInputTranscriptionOptions(
             model="azure-speech",
             language="hi-IN,en-IN",
-            phrase_list=["VoiceLedger", "Ramesh", "Suresh", "udhaar", "baaki"],
+            phrase_list=["VoiceLedger", "udhaar", "baaki", "hisaab"],
         ),
         turn_detection=AzureSemanticVadMultilingual(
             threshold=0.5,
@@ -68,7 +105,44 @@ def build_session() -> RequestSession:
         ),
         input_audio_echo_cancellation=AudioEchoCancellation(),
         input_audio_noise_reduction=AudioNoiseReduction(type="azure_deep_noise_suppression"),
+        tools=build_tools(),
+        tool_choice="auto",
     )
+
+
+async def _handle_tool_call(connection, websocket: WebSocket, event) -> None:
+    """A function_call_arguments.done event means the model wants to call
+    one of our MCP tools. Run it for real, tell the browser (so the call UI
+    can show "checking Utkarsh's ledger..."), then feed the result back into
+    the session so the model's spoken answer is grounded in it."""
+    try:
+        arguments = json.loads(event.arguments) if event.arguments else {}
+    except json.JSONDecodeError:
+        arguments = {}
+
+    await websocket.send_json({
+        "type": "tool_call",
+        "name": event.name,
+        "arguments": arguments,
+    })
+
+    # The MCP tools use the synchronous Supabase client — run off the event
+    # loop thread so a slow DB call doesn't stall the audio stream.
+    result = await asyncio.to_thread(call_tool, event.name, arguments)
+
+    await websocket.send_json({
+        "type": "tool_result",
+        "name": event.name,
+        "data": result,
+    })
+
+    await connection.conversation.item.create(
+        item=FunctionCallOutputItem(
+            call_id=event.call_id,
+            output=json.dumps(result, default=str),
+        )
+    )
+    await connection.response.create()
 
 
 @router.websocket("/ws/voice")
@@ -104,7 +178,7 @@ async def voice_ws(websocket: WebSocket):
                 pass
 
         async def send_to_browser():
-            """Azure audio replies -> browser"""
+            """Azure audio replies + tool grounding -> browser"""
             async for event in connection:
                 if event.type == ServerEventType.RESPONSE_AUDIO_DELTA:
                     await websocket.send_bytes(event.delta)
@@ -117,12 +191,14 @@ async def voice_ws(websocket: WebSocket):
                     text = getattr(event, "transcript", "")
                     await websocket.send_json({"type": "assistant_text", "text": text})
 
+                elif event.type == ServerEventType.RESPONSE_FUNCTION_CALL_ARGUMENTS_DONE:
+                    await _handle_tool_call(connection, websocket, event)
+
                 elif event.type == ServerEventType.ERROR:
                     msg = getattr(event.error, "message", str(event.error))
                     await websocket.send_json({"type": "error", "message": msg})
 
         # run both directions at once, stop when either ends
-        import asyncio
         receiver = asyncio.create_task(receive_from_browser())
         sender = asyncio.create_task(send_to_browser())
         done, pending = await asyncio.wait(

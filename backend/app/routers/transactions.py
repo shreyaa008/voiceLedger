@@ -58,6 +58,36 @@ async def create_transaction(transaction: TransactionCreate):
         )
 
 
+@router.delete("/transactions/{transaction_id}")
+async def delete_transaction(transaction_id: str):
+    """Undo: remove a transaction (used right after a voice entry is auto-saved)."""
+    try:
+        response = (
+            supabase
+            .table("transactions")
+            .delete()
+            .eq("id", transaction_id)
+            .execute()
+        )
+
+        if not response.data:
+            raise HTTPException(
+                status_code=404,
+                detail="Transaction not found"
+            )
+
+        return {"success": True, "deleted_id": transaction_id}
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+
 @router.get("/customers/{customer_id}/ledger")
 async def get_ledger(customer_id: str):
 
