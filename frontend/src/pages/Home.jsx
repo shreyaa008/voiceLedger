@@ -2,11 +2,8 @@
 import EntryRecorder from "../components/EntryRecorder.jsx";
 import Toast from "../components/Toast.jsx";
 import { deleteTransaction } from "../services/api";
+import { DEMO_SHOPKEEPER_ID } from "../config";
 
-// TODO: replace with a real logged-in shopkeeper once auth exists.
-// For now, grab an existing row's id from the "shopkeepers" table in
-// Supabase (Table Editor), or insert one manually, and paste it here.
-const DEMO_SHOPKEEPER_ID = "178a88bd-46ed-45fb-b8a8-2a3949cee6c4";
 
 export default function Home() {
   const [sessionLog, setSessionLog] = useState([]);
