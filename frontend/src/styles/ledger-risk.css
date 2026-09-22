@@ -308,6 +308,63 @@
 .ledger-entry-amount { font-weight: 700; font-size: 16px; }
 .ledger-entry-balance { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 
+.ledger-entry-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+.ledger-entry-action-btn {
+  background: none;
+  border: none;
+  padding: 2px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.ledger-entry-action-btn:hover { color: var(--primary-dark); }
+.ledger-entry-action-btn.danger:hover { color: var(--risk-red); }
+.ledger-entry-action-btn.primary { color: var(--primary-dark); }
+.ledger-entry-action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.ledger-entry-editing { flex-direction: column; align-items: stretch; }
+.ledger-edit-form { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.ledger-edit-type-toggle {
+  display: flex;
+  gap: 6px;
+}
+.ledger-edit-type-toggle button {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ledger-edit-type-toggle button.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+.ledger-edit-amount-input {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  font-size: 15px;
+  color: var(--text-primary);
+  background: var(--surface);
+}
+.ledger-edit-amount-input:focus { outline: 2px solid var(--primary); }
+.ledger-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+}
+
 /* ---------- Reminder pop-up ---------- */
 
 .chip-row {

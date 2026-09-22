@@ -14,10 +14,16 @@ function toShortLang(bcp47) {
  * Live — then saves straight to the ledger. Stays open across multiple
  * back-to-back entries until the shopkeeper taps to stop.
  */
+// How long an identical heard sentence is ignored as an accidental
+// duplicate (VAD firing twice for one utterance, a stray retry, etc.) —
+// mirrors the server-side guard in routers/transactions.py.
+const DUPLICATE_GUARD_MS = 8000;
+
 export default function EntryRecorder({ shopkeeperId, onSaved, onMissed, onError }) {
   const [sessionActive, setSessionActive] = useState(false);
   const [status, setStatus] = useState("idle"); // idle | listening | hearing | saving
   const recorderRef = useRef(null);
+  const recentSubmissionsRef = useRef(new Map()); // normalized text -> timestamp
 
   const handleSegment = useCallback(
     async (blob) => {
@@ -31,8 +37,26 @@ export default function EntryRecorder({ shopkeeperId, onSaved, onMissed, onError
           return;
         }
 
+        const normalized = text.trim().toLowerCase();
+        const now = Date.now();
+        const lastSubmittedAt = recentSubmissionsRef.current.get(normalized);
+        if (lastSubmittedAt && now - lastSubmittedAt < DUPLICATE_GUARD_MS) {
+          // Same sentence heard again within the guard window — most
+          // likely the mic picking up one utterance as two segments.
+          // Don't save it twice; just keep listening.
+          setStatus(sessionActive ? "listening" : "idle");
+          return;
+        }
+        recentSubmissionsRef.current.set(normalized, now);
+
         try {
           const result = await processTransaction(text, shortLang, shopkeeperId);
+          if (result.duplicate_ignored) {
+            // Backend recognized this as the same entry saved moments ago
+            // (belt-and-suspenders alongside the client-side guard above)
+            // and did not create a second row — nothing new to show.
+            return;
+          }
           onSaved?.({
             id: result.transaction.id,
             customer: result.customer.name,
@@ -41,9 +65,17 @@ export default function EntryRecorder({ shopkeeperId, onSaved, onMissed, onError
             heardText: text,
           });
         } catch (saveErr) {
-          // Couldn't identify customer/amount/type from this utterance —
-          // don't block the session, just surface it and keep listening.
-          onMissed?.(text, saveErr.message);
+          if (saveErr.kind === "validation") {
+            // Server understood the request but couldn't identify
+            // customer/amount/type from this utterance — don't block the
+            // session, just surface it and keep listening.
+            onMissed?.(text, saveErr.message);
+          } else {
+            // Network unreachable, or the backend/Azure/Supabase itself
+            // failed — a real error, not "try saying it again differently".
+            recentSubmissionsRef.current.delete(normalized); // allow retry
+            onError?.(saveErr.message);
+          }
         }
       } catch (err) {
         onError?.(err.message);
