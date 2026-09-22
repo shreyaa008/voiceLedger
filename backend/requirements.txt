@@ -8,3 +8,4 @@ azure-ai-textanalytics
 openai
 python-multipart
 azure-ai-voicelive[aiohttp]
+Unidecode

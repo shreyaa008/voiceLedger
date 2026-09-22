@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { getCustomerLedger } from "../services/api";
+import { useCallback, useEffect, useState } from "react";
+import { deleteTransaction, getCustomerLedger, updateTransaction } from "../services/api";
 import { formatINR } from "../utils/format";
 import LedgerList from "./LedgerList.jsx";
 import RiskBadge from "./RiskBadge.jsx";
@@ -9,6 +9,14 @@ import Spinner from "./Spinner.jsx";
 export default function CustomerLedgerSheet({ customer, onClose, onRemind }) {
   const [transactions, setTransactions] = useState(null);
   const [error, setError] = useState(null);
+  const [actionError, setActionError] = useState(null);
+
+  const loadLedger = useCallback(() => {
+    setError(null);
+    return getCustomerLedger(customer.id)
+      .then((res) => setTransactions(res.transactions))
+      .catch((err) => setError(err.message));
+  }, [customer.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -21,6 +29,27 @@ export default function CustomerLedgerSheet({ customer, onClose, onRemind }) {
       cancelled = true;
     };
   }, [customer.id]);
+
+  async function handleEdit(transaction, updates) {
+    setActionError(null);
+    try {
+      await updateTransaction(transaction.id, updates);
+      await loadLedger();
+    } catch (err) {
+      setActionError(err.message);
+    }
+  }
+
+  async function handleDelete(transaction) {
+    if (!window.confirm("Delete this entry? This cannot be undone.")) return;
+    setActionError(null);
+    try {
+      await deleteTransaction(transaction.id);
+      await loadLedger();
+    } catch (err) {
+      setActionError(err.message);
+    }
+  }
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -67,12 +96,15 @@ export default function CustomerLedgerSheet({ customer, onClose, onRemind }) {
         <div className="sheet-title">Entries</div>
         <div className="sheet-scroll">
           {error && <p className="inline-error">{error}</p>}
+          {actionError && <p className="inline-error">{actionError}</p>}
           {!error && transactions === null && (
             <div className="center-spinner">
               <Spinner />
             </div>
           )}
-          {transactions && <LedgerList transactions={transactions} />}
+          {transactions && (
+            <LedgerList transactions={transactions} onEdit={handleEdit} onDelete={handleDelete} />
+          )}
         </div>
       </div>
     </div>

@@ -10,6 +10,69 @@ from azure.ai.textanalytics import TextAnalyticsClient
 load_dotenv()
 
 
+def _classify_transaction_type(text: str) -> str | None:
+    """Decide CREDIT vs PAYMENT from the sentence using phrase/semantic
+    signals, checked in priority order — not isolated single-word matching.
+
+    BUG THIS FIXES: the previous version matched bare "दिया"/"दिए"/"दी"
+    ("gave"/"give") as a payment word. But "दिया" is *also* the verb used
+    when giving credit ("उधार दिया" = "gave on credit"), and payment words
+    were checked before credit words — so "Shreya ko udhaar diye" (a
+    CREDIT) matched "दिए" and got silently reclassified as a PAYMENT.
+
+    Fix: check strong, unambiguous phrase-level signals first (repayment
+    words, then "उधार"/credit words), and only fall back to bare verbs
+    when neither signal is present at all. Also written to recognize
+    common Hinglish/romanized spellings ("udhaar", "wapas"), not just
+    Devanagari — shopkeepers code-switch, and a mislabeled language tag
+    from speech-to-text shouldn't make classification fail outright.
+    """
+    t = text.lower()
+
+    # 1. Explicit repayment/settling signals — unambiguous even when
+    #    "उधार/udhaar" also appears in the same sentence
+    #    (e.g. "उधार चुका दिया" = settled the credit = a PAYMENT).
+    payback_signals = [
+        "वापस", "भुगतान", "चुका", "चुक",
+        "wapas", "vapas", "bhugtan", "bhugtaan", "chuka", "chukaya", "chukaye",
+        "paid back", "pay back", "settle",
+    ]
+    if any(sig in t for sig in payback_signals):
+        return "payment"
+
+    # 2. "उधार/udhaar" (credit, loan) is an unambiguous CREDIT signal in
+    #    khata usage — checked before any bare give/take verb.
+    credit_signals = [
+        "उधार", "उधारी", "बाकी", "खाते में", "कर्ज़", "करज़",
+        "udhar", "udhaar", "udhaari", "credit", "due", "borrowed", "owes",
+    ]
+    if any(sig in t for sig in credit_signals):
+        return "credit"
+
+    # 3. Plain English purchase/payment words.
+    if any(w in t for w in ["bought", "purchase", "purchased"]):
+        return "credit"
+    if any(w in t for w in ["paid", "payment", "pay", "returned", "settled"]):
+        return "payment"
+
+    # 4. Last resort — bare give/take/receive verbs, only reached when no
+    #    signal word above matched anywhere in the sentence. "लिया/liya"
+    #    ("took") implies the customer took money/goods -> credit;
+    #    "दिया/mila" ("gave"/"got") with no other signal -> payment.
+    take_verbs = ["लिया", "लिए", "ली", "liya", "liye", "lee"]
+    if any(w in t for w in take_verbs):
+        return "credit"
+
+    give_or_receive_verbs = [
+        "दिया", "दिए", "दी", "मिला", "मिले", "मिली",
+        "diya", "diye", "dee", "mila", "mile", "gave",
+    ]
+    if any(w in t for w in give_or_receive_verbs):
+        return "payment"
+
+    return None
+
+
 def extract_transaction(text: str, language: str = "en") -> dict:
     endpoint = os.getenv("AZURE_LANGUAGE_ENDPOINT")
     key = os.getenv("AZURE_LANGUAGE_KEY")
@@ -66,58 +129,7 @@ def extract_transaction(text: str, language: str = "en") -> dict:
             if entity.subcategory == "Date":
                 extracted_date = date.today()
 
-    # Determine transaction type from the text
-    text_lower = text.lower()
-
-    if language == "en":
-        payment_words = [
-            "paid",
-            "payment",
-            "pay",
-            "gave",
-            "returned",
-            "settled"
-        ]
-
-        credit_words = [
-            "bought",
-            "purchase",
-            "credit",
-            "due",
-            "owes",
-            "borrowed"
-        ]
-
-    else:
-        payment_words = [
-            "दिया",
-            "दिए",
-            "दी",
-            "भुगतान",
-            "चुकाया",
-            "चुकाए",
-            "दे दिया",
-            "दे दिए",
-            "पैसे दिए",
-            "रुपये दिए",
-            "रुपए दिए"
-        ]   
-
-        credit_words = [
-            "उधार",
-            "बाकी",
-            "लिए",
-            "लिया",
-            "खाते में"
-        ]
-
-    transaction_type = None
-
-    if any(word in text_lower for word in payment_words):
-        transaction_type = "payment"
-
-    elif any(word in text_lower for word in credit_words):
-        transaction_type = "credit"
+    transaction_type = _classify_transaction_type(text)
 
     return {
         "customer": customer,

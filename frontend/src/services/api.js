@@ -6,115 +6,114 @@ export default API_BASE;
 // Ask call UI to reach /ws/voice.
 export const WS_BASE = API_BASE.replace(/^http/, "ws");
 
+// Distinguishes *why* a request failed so the UI can react correctly:
+//   "network"    - fetch() itself threw: backend unreachable, offline,
+//                   DNS/CORS failure. Not a validation problem — the
+//                   request never even reached the server.
+//   "validation" - HTTP 400: the server understood the request but
+//                   rejected it (e.g. couldn't identify customer/amount
+//                   from speech).
+//   "not_found"  - HTTP 404.
+//   "server"     - HTTP 5xx: the backend (or a call it made to Azure/
+//                   Supabase) failed while handling a valid request.
+export class ApiError extends Error {
+  constructor(message, kind, status) {
+    super(message);
+    this.name = "ApiError";
+    this.kind = kind;
+    this.status = status;
+  }
+}
+
+async function apiFetch(path, options) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, options);
+  } catch (networkErr) {
+    // fetch() only throws for network-level failures (backend down,
+    // offline, CORS, DNS) — never for a valid HTTP error response, so
+    // this is unambiguously "we couldn't reach the server at all".
+    throw new ApiError(
+      "Could not reach the server. Check your connection and that the backend is running.",
+      "network"
+    );
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const detail = body.detail || `Request failed (${res.status})`;
+    const kind = res.status === 400 ? "validation" : res.status === 404 ? "not_found" : "server";
+    throw new ApiError(detail, kind, res.status);
+  }
+
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+function jsonBody(obj) {
+  return { headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) };
+}
+
 // Send a recorded utterance (WAV blob) to Azure AI Speech for transcription.
 export async function transcribeAudio(blob) {
   const formData = new FormData();
   formData.append("file", blob, "entry.wav");
-
-  const res = await fetch(`${API_BASE}/transcribe`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Transcription failed");
-  }
-
-  return res.json(); // { success, filename, text, language }
+  return apiFetch("/transcribe", { method: "POST", body: formData });
+  // -> { success, filename, text, language }
 }
 
 // Undo a just-saved transaction.
 export async function deleteTransaction(transactionId) {
-  const res = await fetch(`${API_BASE}/transactions/${transactionId}`, {
-    method: "DELETE",
+  return apiFetch(`/transactions/${transactionId}`, { method: "DELETE" });
+}
+
+// Edit a past entry's amount and/or type.
+export async function updateTransaction(transactionId, updates) {
+  return apiFetch(`/transactions/${transactionId}`, {
+    method: "PATCH",
+    ...jsonBody(updates),
   });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Could not undo transaction");
-  }
-
-  return res.json();
+  // -> { success, transaction }
 }
 
 // Extract customer/amount/type/date from raw text — DISPLAY ONLY, saves nothing.
 export async function extractTransaction(text, language = "hi") {
-  const res = await fetch(`${API_BASE}/extract`, {
+  return apiFetch("/extract", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, language }),
+    ...jsonBody({ text, language }),
   });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Extraction failed");
-  }
-
-  return res.json(); // { success, customer, amount, type, date, language }
+  // -> { success, customer, amount, type, date, language }
 }
 
-// Actually extracts AND saves — call this only after the shopkeeper confirms.
+// Actually extracts AND saves — call this only after the shopkeeper confirms
+// (or, for the auto-save entry flow, when extraction confidence is high).
 export async function processTransaction(text, language, shopkeeperId) {
-  const res = await fetch(`${API_BASE}/process-transaction`, {
+  return apiFetch("/process-transaction", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, language, shopkeeper_id: shopkeeperId }),
+    ...jsonBody({ text, language, shopkeeper_id: shopkeeperId }),
   });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Could not save transaction");
-  }
-
-  return res.json(); // { success, customer_created, customer, transaction }
+  // -> { success, customer_created, customer, transaction }
 }
 
 // ---------- Ledger & Risk screens ----------
 
 // Every customer with balance + risk, plus "You'll Get / You'll Give" totals.
 export async function getDashboardSummary(shopkeeperId) {
-  const res = await fetch(
-    `${API_BASE}/dashboard/summary?shopkeeper_id=${encodeURIComponent(shopkeeperId)}`
-  );
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Could not load your ledger");
-  }
-
-  return res.json(); // { totals, risk_counts, customers: [...] }
+  return apiFetch(`/dashboard/summary?shopkeeper_id=${encodeURIComponent(shopkeeperId)}`);
+  // -> { totals, risk_counts, customers: [...] }
 }
 
 // All entries (udhaar + payments) for one customer.
 export async function getCustomerLedger(customerId) {
-  const res = await fetch(`${API_BASE}/customers/${encodeURIComponent(customerId)}/ledger`);
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Could not load this customer's entries");
-  }
-
-  return res.json(); // { customer_id, transactions: [...] }
+  return apiFetch(`/customers/${encodeURIComponent(customerId)}/ledger`);
+  // -> { customer_id, transactions: [...] }
 }
 
 // Ready-to-send payment reminder text.
 export async function generateReminder(shopkeeperId, customerId, tone, language) {
-  const res = await fetch(`${API_BASE}/dashboard/reminder`, {
+  return apiFetch("/dashboard/reminder", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      shopkeeper_id: shopkeeperId,
-      customer_id: customerId,
-      tone,
-      language,
-    }),
+    ...jsonBody({ shopkeeper_id: shopkeeperId, customer_id: customerId, tone, language }),
   });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Could not create the reminder");
-  }
-
-  return res.json(); // { customer, phone, amount_due, days_overdue, reminder_text, ... }
+  // -> { customer, phone, amount_due, days_overdue, reminder_text, ... }
 }
