@@ -19,7 +19,7 @@ function toShortLang(bcp47) {
 // mirrors the server-side guard in routers/transactions.py.
 const DUPLICATE_GUARD_MS = 8000;
 
-export default function EntryRecorder({ shopkeeperId, onSaved, onMissed, onError }) {
+export default function EntryRecorder({ onSaved, onMissed, onError }) {
   const [sessionActive, setSessionActive] = useState(false);
   const [status, setStatus] = useState("idle"); // idle | listening | hearing | saving
   const recorderRef = useRef(null);
@@ -50,7 +50,7 @@ export default function EntryRecorder({ shopkeeperId, onSaved, onMissed, onError
         recentSubmissionsRef.current.set(normalized, now);
 
         try {
-          const result = await processTransaction(text, shortLang, shopkeeperId);
+          const result = await processTransaction(text, shortLang);
           if (result.duplicate_ignored) {
             // Backend recognized this as the same entry saved moments ago
             // (belt-and-suspenders alongside the client-side guard above)
@@ -83,7 +83,7 @@ export default function EntryRecorder({ shopkeeperId, onSaved, onMissed, onError
         setStatus((s) => (s === "saving" ? "listening" : s));
       }
     },
-    [shopkeeperId, onSaved, onMissed, onError, sessionActive]
+    [onSaved, onMissed, onError, sessionActive]
   );
 
   const startSession = useCallback(async () => {

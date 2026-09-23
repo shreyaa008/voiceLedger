@@ -3,13 +3,13 @@ import Home from "./pages/Home.jsx";
 import Ledger from "./pages/Ledger.jsx";
 import Ask from "./pages/Ask.jsx";
 import Risk from "./pages/Risk.jsx";
-import { ShopkeeperProvider } from "./context/ShopkeeperContext.jsx";
+import { ShopkeeperProvider, useShopkeeper } from "./context/ShopkeeperContext.jsx";
 
 const navLinkClass = ({ isActive }) => `nav-link ${isActive ? "active" : ""}`;
 
-export default function App() {
+function AppShell() {
+  const shopkeeper = useShopkeeper();
   return (
-    <ShopkeeperProvider>
     <BrowserRouter>
       <div className="app-shell">
         <header className="navbar">
@@ -23,6 +23,9 @@ export default function App() {
             <NavLink to="/ask" className={navLinkClass}>Ask</NavLink>
             <NavLink to="/risk" className={navLinkClass}>Risk</NavLink>
           </nav>
+          <button className="btn btn-secondary" onClick={shopkeeper.signOut} type="button">
+            Log out
+          </button>
         </header>
 
         <main className="container">
@@ -35,6 +38,13 @@ export default function App() {
         </main>
       </div>
     </BrowserRouter>
+  );
+}
+
+export default function App() {
+  return (
+    <ShopkeeperProvider>
+      <AppShell />
     </ShopkeeperProvider>
   );
 }

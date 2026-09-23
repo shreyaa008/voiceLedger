@@ -53,7 +53,7 @@ export default function Home() {
       <Toast message={toast?.message} actionLabel={toast?.actionLabel} onAction={toast?.onAction} />
 
       <div className="hero">
-        <div className="hero-eyebrow">VOICE-FIRST KHATA</div>
+        <div className="hero-eyebrow">VOICE-FIRST KHATA · {shopkeeper.name}</div>
         <h1 className="hero-heading">Speak it. We'll keep track.</h1>
         <p className="hero-subtext">Record a transaction in Hindi or English.</p>
         {sessionLog.length === 0 && (
@@ -76,12 +76,7 @@ export default function Home() {
         )}
       </div>
 
-      <EntryRecorder
-        shopkeeperId={shopkeeper.id}
-        onSaved={handleSaved}
-        onMissed={handleMissed}
-        onError={handleError}
-      />
+      <EntryRecorder onSaved={handleSaved} onMissed={handleMissed} onError={handleError} />
     </div>
   );
 }
