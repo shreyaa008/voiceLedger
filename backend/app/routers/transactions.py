@@ -191,9 +191,25 @@ async def delete_transaction(transaction_id: str):
 
 
 @router.get("/customers/{customer_id}/ledger")
-async def get_ledger(customer_id: str):
-
+async def get_ledger(customer_id: str, shopkeeper_id: str):
+    """A single customer's entries. shopkeeper_id is required and checked
+    against the customer's own shopkeeper_id first, so one shopkeeper can
+    never pull another shopkeeper's customer ledger by guessing/reusing a
+    customer_id — the same isolation guarantee dashboard/summary already
+    has, applied here too."""
     try:
+        owner_check = (
+            supabase
+            .table("customers")
+            .select("id")
+            .eq("id", customer_id)
+            .eq("shopkeeper_id", shopkeeper_id)
+            .limit(1)
+            .execute()
+        )
+        if not owner_check.data:
+            raise HTTPException(status_code=404, detail="Customer not found")
+
         response = (
             supabase
             .table("transactions")
@@ -207,6 +223,9 @@ async def get_ledger(customer_id: str):
             "customer_id": customer_id,
             "transactions": response.data
         }
+
+    except HTTPException:
+        raise
 
     except Exception as e:
         raise HTTPException(

@@ -10,6 +10,7 @@ from app.routers import (
     agent,
     voice_live,
     dashboard,
+    shopkeepers,
 )
 
 app = FastAPI(
@@ -34,6 +35,7 @@ app.include_router(translation.router)
 app.include_router(agent.router)
 app.include_router(voice_live.router)
 app.include_router(dashboard.router)
+app.include_router(shopkeepers.router)
 
 
 @app.get("/")

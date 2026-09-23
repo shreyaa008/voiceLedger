@@ -1,8 +1,9 @@
 import { useState } from "react";
 import AskAssistant from "../components/AskAssistant.jsx";
-import { DEMO_SHOPKEEPER_ID } from "../config";
+import { useShopkeeper } from "../context/ShopkeeperContext.jsx";
 
 export default function Ask() {
+  const shopkeeper = useShopkeeper();
   const [callActive, setCallActive] = useState(false);
 
   return (
@@ -20,7 +21,7 @@ export default function Ask() {
       </div>
 
       {callActive && (
-        <AskAssistant shopkeeperId={DEMO_SHOPKEEPER_ID} onClose={() => setCallActive(false)} />
+        <AskAssistant shopkeeperId={shopkeeper.id} onClose={() => setCallActive(false)} />
       )}
     </div>
   );

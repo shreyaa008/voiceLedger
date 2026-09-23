@@ -103,10 +103,26 @@ export async function getDashboardSummary(shopkeeperId) {
   // -> { totals, risk_counts, customers: [...] }
 }
 
-// All entries (udhaar + payments) for one customer.
-export async function getCustomerLedger(customerId) {
-  return apiFetch(`/customers/${encodeURIComponent(customerId)}/ledger`);
+// All entries (udhaar + payments) for one customer. shopkeeper_id is
+// required by the backend, which checks the customer belongs to this
+// shopkeeper before returning anything.
+export async function getCustomerLedger(customerId, shopkeeperId) {
+  return apiFetch(
+    `/customers/${encodeURIComponent(customerId)}/ledger?shopkeeper_id=${encodeURIComponent(shopkeeperId)}`
+  );
   // -> { customer_id, transactions: [...] }
+}
+
+// ---------- Shopkeeper identity ----------
+
+// Get-or-create the shopkeeper row for this phone number. Safe to call
+// every time the app loads.
+export async function identifyShopkeeper(name, phone) {
+  return apiFetch("/shopkeepers/identify", {
+    method: "POST",
+    ...jsonBody({ name, phone }),
+  });
+  // -> { shopkeeper: { id, name, phone, preferred_language } }
 }
 
 // Ready-to-send payment reminder text.
