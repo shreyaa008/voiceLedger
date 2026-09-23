@@ -80,8 +80,10 @@ def get_tools_schema() -> list:
     return openai_tools
 
 
-def run_foundry_agent(question: str, language: str = "hi") -> dict | None:
-    """Execute query through Microsoft Foundry Agent with tool-calling loop."""
+def run_foundry_agent(question: str, language: str = "hi", shopkeeper_id: str = None) -> dict | None:
+    """Execute query through Microsoft Foundry Agent with tool-calling loop.
+    shopkeeper_id scopes every tool call to this shopkeeper's own data —
+    it is never something the model chooses; it comes from the caller."""
     client = get_foundry_client()
     if not client:
         return None
@@ -116,8 +118,9 @@ def run_foundry_agent(question: str, language: str = "hi") -> dict | None:
             print(f"\n[AZURE FOUNDRY] Model '{deployment_name}' decided to call MCP Tool: '{tool_name}'")
             print(f"[AZURE FOUNDRY] Extracted Arguments: {tool_args}")
 
-            # Execute the tool via our MCP server
-            tool_output = call_tool(tool_name, tool_args)
+            # Execute the tool via our MCP server — shopkeeper_id is injected
+            # server-side inside call_tool(), not taken from tool_args.
+            tool_output = call_tool(tool_name, tool_args, shopkeeper_id=shopkeeper_id)
             print(f"[MCP SERVER] Tool Output from DB: {tool_output}")
 
             messages.append(msg)

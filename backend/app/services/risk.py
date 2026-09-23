@@ -124,3 +124,32 @@ def summarize(transactions: list[dict], today: date | None = None) -> dict:
         "risk_level": level,
         "reasons": reasons,
     }
+
+
+def reminder_text(name: str, amount: float, days: int, tone: str, language: str) -> str:
+    """Same wording used by the Ledger page's reminder composer and the
+    ASK generate_reminder tool — one implementation, so the message a
+    shopkeeper gets by asking is identical to the one they'd get by
+    tapping "Remind" in the app."""
+    amt = inr(amount)
+    if language == "hi":
+        if tone == "firm":
+            return (
+                f"Namaste {name} ji, aapka {amt} ka udhaar {days} din se baaki hai. "
+                "Kripya jaldi se jaldi bhugtan karein taaki aage bhi udhaar diya ja sake."
+            )
+        if tone == "standard":
+            return f"Namaste {name} ji, aapka kul baaki balance {amt} hai. Kripya samay par chukta karein."
+        return (
+            f"Namaste {name} ji, aasha hai aap kushal hain. Ek chhota sa reminder — "
+            f"aapka {amt} baaki hai. Suvidha anusaar bhej dijiye. Dhanyavaad!"
+        )
+
+    if tone == "firm":
+        return (
+            f"Dear {name}, your balance of {amt} has been pending for {days} days. "
+            "Please clear it as soon as possible so we can continue giving credit."
+        )
+    if tone == "standard":
+        return f"Dear {name}, this is a reminder that your outstanding balance is {amt}. Kindly arrange the payment."
+    return f"Hello {name}, hope you're doing well! A gentle reminder about your pending balance of {amt}. Thank you!"

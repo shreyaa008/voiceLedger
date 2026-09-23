@@ -582,6 +582,26 @@ body {
   padding: 4px 4px;
 }
 
+.ask-error-banner {
+  align-self: center;
+  max-width: 90%;
+  text-align: center;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ask-error-banner p {
+  font-size: 13px;
+  color: var(--text-primary);
+  margin: 0;
+}
+
 .ask-call-controls {
   display: flex;
   align-items: center;

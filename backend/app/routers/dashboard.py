@@ -12,46 +12,17 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.services.risk import inr, summarize
+from app.services.ledger_data import fetch_customers, fetch_transactions
+from app.services.risk import reminder_text, summarize
 from app.services.supabase_client import supabase
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
-
-PAGE_SIZE = 1000  # Supabase returns at most 1000 rows per request
-
-
-def _fetch_transactions(customer_ids: list[str]) -> list[dict]:
-    """All transactions for these customers, paging past Supabase's 1000-row limit."""
-    rows: list[dict] = []
-    start = 0
-    while True:
-        page = (
-            supabase.table("transactions")
-            .select("id, customer_id, amount, type, date, due_date")
-            .in_("customer_id", customer_ids)
-            .order("id")
-            .range(start, start + PAGE_SIZE - 1)
-            .execute()
-            .data
-            or []
-        )
-        rows.extend(page)
-        if len(page) < PAGE_SIZE:
-            return rows
-        start += PAGE_SIZE
 
 
 @router.get("/summary")
 async def dashboard_summary(shopkeeper_id: str):
     try:
-        customers = (
-            supabase.table("customers")
-            .select("id, name, phone")
-            .eq("shopkeeper_id", shopkeeper_id)
-            .execute()
-            .data
-            or []
-        )
+        customers = fetch_customers(shopkeeper_id)
 
         if not customers:
             return {
@@ -61,7 +32,7 @@ async def dashboard_summary(shopkeeper_id: str):
             }
 
         by_customer: dict[str, list[dict]] = {c["id"]: [] for c in customers}
-        for t in _fetch_transactions(list(by_customer)):
+        for t in fetch_transactions(list(by_customer)):
             by_customer[t["customer_id"]].append(t)
 
         result = []
@@ -104,31 +75,6 @@ class ReminderRequest(BaseModel):
     language: Literal["hi", "en"] = "hi"
 
 
-def _reminder_text(name: str, amount: float, days: int, tone: str, language: str) -> str:
-    amt = inr(amount)
-    if language == "hi":
-        if tone == "firm":
-            return (
-                f"Namaste {name} ji, aapka {amt} ka udhaar {days} din se baaki hai. "
-                "Kripya jaldi se jaldi bhugtan karein taaki aage bhi udhaar diya ja sake."
-            )
-        if tone == "standard":
-            return f"Namaste {name} ji, aapka kul baaki balance {amt} hai. Kripya samay par chukta karein."
-        return (
-            f"Namaste {name} ji, aasha hai aap kushal hain. Ek chhota sa reminder — "
-            f"aapka {amt} baaki hai. Suvidha anusaar bhej dijiye. Dhanyavaad!"
-        )
-
-    if tone == "firm":
-        return (
-            f"Dear {name}, your balance of {amt} has been pending for {days} days. "
-            "Please clear it as soon as possible so we can continue giving credit."
-        )
-    if tone == "standard":
-        return f"Dear {name}, this is a reminder that your outstanding balance is {amt}. Kindly arrange the payment."
-    return f"Hello {name}, hope you're doing well! A gentle reminder about your pending balance of {amt}. Thank you!"
-
-
 @router.post("/reminder")
 async def make_reminder(req: ReminderRequest):
     try:
@@ -145,7 +91,7 @@ async def make_reminder(req: ReminderRequest):
             raise HTTPException(status_code=404, detail="Customer not found")
         customer = found[0]
 
-        info = summarize(_fetch_transactions([customer["id"]]))
+        info = summarize(fetch_transactions([customer["id"]]))
 
         if info["balance"] <= 0:
             raise HTTPException(status_code=400, detail=f"{customer['name']} has nothing pending")
@@ -157,7 +103,7 @@ async def make_reminder(req: ReminderRequest):
             "days_overdue": info["days_overdue"],
             "tone": req.tone,
             "language": req.language,
-            "reminder_text": _reminder_text(
+            "reminder_text": reminder_text(
                 customer["name"], info["balance"], info["days_overdue"], req.tone, req.language
             ),
         }

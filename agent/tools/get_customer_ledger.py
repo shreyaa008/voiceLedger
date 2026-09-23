@@ -1,53 +1,48 @@
 """
-Tool: get_customer_ledger
-Fetches customer balance and transaction history directly from Supabase.
+Tool: get_customer_ledger  (READ-ONLY)
+
+Fetch one customer's balance and full transaction history — scoped to the
+shopkeeper asking, using the exact same data access and balance math as
+the Ledger screen (app.services.ledger_data + app.services.risk.summarize),
+so ASK's numbers can never disagree with what's on screen.
+
+Never creates a customer. If none is found for this shopkeeper, returns
+found=False — the caller (system prompt) is instructed to say so plainly,
+not invent a record.
 """
-
-import os
-from dotenv import load_dotenv
-
-from backend.app.services.supabase_client import supabase
+from app.services.ledger_data import fetch_transactions, find_customer
+from app.services.risk import summarize
 
 
-def get_customer_ledger(customer_name: str) -> dict:
-    """Fetch customer balance and transaction history from Supabase database."""
-    try:
-        normalized_name = customer_name.strip().title()
-        
-        # 1. Query customer by name
-        cust_res = supabase.table("customers").select("id, name").ilike("name", normalized_name).execute()
-        
-        if not cust_res.data or len(cust_res.data) == 0:
-            return {
-                "customer": customer_name,
-                "found": False,
-                "net_balance": 0.0,
-                "transactions": []
-            }
-        
-        customer = cust_res.data[0]
-        customer_id = customer["id"]
-        
-        # 2. Query transactions for customer
-        tx_res = supabase.table("transactions").select("*").eq("customer_id", customer_id).order("date", desc=True).execute()
-        transactions = tx_res.data or []
-        
-        # 3. Calculate net balance: SUM(credit) - SUM(payment)
-        credits = sum(float(t.get("amount", 0)) for t in transactions if t.get("type") == "credit")
-        payments = sum(float(t.get("amount", 0)) for t in transactions if t.get("type") == "payment")
-        net_balance = credits - payments
-        
-        return {
-            "customer": customer["name"],
-            "found": True,
-            "net_balance": round(float(net_balance), 2),
-            "transactions": transactions
-        }
-    except Exception as e:
+def get_customer_ledger(customer_name: str, shopkeeper_id: str = None) -> dict:
+    if not shopkeeper_id:
         return {
             "customer": customer_name,
             "found": False,
             "net_balance": 0.0,
             "transactions": [],
-            "error": str(e)
+            "error": "No shopkeeper session — cannot look up data.",
         }
+
+    customer = find_customer(shopkeeper_id, customer_name)
+    if customer is None:
+        return {
+            "customer": customer_name,
+            "found": False,
+            "net_balance": 0.0,
+            "transactions": [],
+        }
+
+    transactions = fetch_transactions([customer["id"]])
+    info = summarize(transactions)
+
+    return {
+        "customer": customer["name"],
+        "found": True,
+        "net_balance": info["balance"],
+        "credit_total": info["credit_total"],
+        "payment_total": info["payment_total"],
+        "entry_count": info["entry_count"],
+        "last_activity": info["last_activity"],
+        "transactions": transactions,
+    }

@@ -9,3 +9,4 @@ openai
 python-multipart
 azure-ai-voicelive[aiohttp]
 Unidecode
+tzdata
