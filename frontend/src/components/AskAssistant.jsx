@@ -15,16 +15,29 @@ const TOOL_LABELS = {
  * to Voice Live over /ws/voice, and shows the conversation as chat bubbles
  * while the mic stays open — mirrors the reference app's call UI.
  */
-export default function AskAssistant({ onClose }) {
+export default function AskAssistant({ onClose, shopkeeperId }) {
   const [messages, setMessages] = useState([]); // { role: 'user' | 'assistant', text }
-  const [status, setStatus] = useState("connecting"); // connecting | connected | disconnected | error
+  // connecting -> connected -> ready -> (disconnected | error)
+  const [status, setStatus] = useState("connecting");
+  const [errorMsg, setErrorMsg] = useState(null);
   const [toolActivity, setToolActivity] = useState(null);
+  // bumped to force the connection effect to run again for "Try again"
+  const [attempt, setAttempt] = useState(0);
   const clientRef = useRef(null);
   const scrollRef = useRef(null);
 
   useEffect(() => {
+    setStatus("connecting");
+    setErrorMsg(null);
+
+    // shopkeeper_id must travel with the WebSocket connection itself (there's
+    // no per-message auth on this socket), so it goes as a query param — the
+    // backend reads it in voice_ws() and threads it through every MCP tool
+    // call. Without this, get_customer_ledger/check_risk/etc. all fail with
+    // "No shopkeeper session" and the assistant apologizes instead of
+    // answering (see backend/app/routers/voice_live.py).
     const client = new VoiceLiveClient({
-      wsUrl: `${WS_BASE}/ws/voice`,
+      wsUrl: `${WS_BASE}/ws/voice?shopkeeper_id=${encodeURIComponent(shopkeeperId || "")}`,
       onStatusChange: setStatus,
       onTranscript: (text) => {
         if (!text?.trim()) return;
@@ -45,7 +58,7 @@ export default function AskAssistant({ onClose }) {
       },
       onError: (msg) => {
         setStatus("error");
-        setMessages((prev) => [...prev, { role: "assistant", text: `⚠️ ${msg}` }]);
+        setErrorMsg(msg);
       },
     });
 
@@ -56,15 +69,22 @@ export default function AskAssistant({ onClose }) {
       clientRef.current?.stop();
       clientRef.current = null;
     };
-  }, []);
+  }, [attempt, shopkeeperId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, toolActivity]);
+  }, [messages, toolActivity, errorMsg]);
 
   function endCall() {
     clientRef.current?.stop();
     onClose?.();
+  }
+
+  function retryCall() {
+    setMessages([]);
+    setToolActivity(null);
+    setErrorMsg(null);
+    setAttempt((n) => n + 1);
   }
 
   return (
@@ -75,10 +95,10 @@ export default function AskAssistant({ onClose }) {
       <div className="ask-sheet-handle"></div>
 
       <div className="ask-transcript" ref={scrollRef}>
-        {messages.length === 0 && status === "connecting" && (
+        {messages.length === 0 && (status === "connecting" || status === "connected") && (
           <p className="ask-hint">Connecting...</p>
         )}
-        {messages.length === 0 && status === "connected" && (
+        {messages.length === 0 && status === "ready" && (
           <p className="ask-hint">Kuch bhi pucho — jaise "Utkarsh ka kitna hisaab baaki hai?"</p>
         )}
 
@@ -89,10 +109,19 @@ export default function AskAssistant({ onClose }) {
         ))}
 
         {toolActivity && <div className="ask-tool-activity">{toolActivity}</div>}
+
+        {status === "error" && (
+          <div className="ask-error-banner">
+            <p>⚠️ {errorMsg || "Something went wrong with the call."}</p>
+            <button className="btn btn-secondary" onClick={retryCall}>
+              Try again
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="ask-call-controls">
-        <div className={`ask-mic-indicator ${status === "connected" ? "live" : ""}`} aria-hidden="true">
+        <div className={`ask-mic-indicator ${status === "ready" ? "live" : ""}`} aria-hidden="true">
           <MicIcon />
         </div>
         <button className="ask-end-btn" onClick={endCall}>

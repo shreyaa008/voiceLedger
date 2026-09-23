@@ -1,51 +1,47 @@
-import asyncio
 import os
+import asyncio
+from pathlib import Path
 
 from dotenv import load_dotenv
 from azure.core.credentials import AzureKeyCredential
 from azure.ai.voicelive.aio import connect
 
-load_dotenv()
+
+# Load the exact .env file
+env_file = Path(__file__).parent / "backend" / ".env"
+load_dotenv(env_file)
+
+endpoint = os.getenv("AZURE_VOICELIVE_ENDPOINT")
+api_key = os.getenv("AZURE_VOICELIVE_API_KEY")
+model = os.getenv("AZURE_VOICELIVE_MODEL")
+api_version = os.getenv("AZURE_VOICELIVE_API_VERSION")
+
+print("Endpoint:", endpoint)
+print("Model:", model)
+print("API version:", api_version)
+print("API key loaded:", bool(api_key))
+print("API key length:", len(api_key) if api_key else 0)
 
 
 async def main():
-    endpoint = os.getenv("AZURE_VOICELIVE_ENDPOINT")
-    api_key = os.getenv("AZURE_VOICELIVE_API_KEY")
-    model = os.getenv("AZURE_VOICELIVE_MODEL", "gpt-realtime")
-    api_version = os.getenv(
-        "AZURE_VOICELIVE_API_VERSION",
-        "2026-04-10"
-    )
+    try:
+        async with connect(
+            credential=AzureKeyCredential(api_key),
+            endpoint=endpoint,
+            api_version=api_version,
+            model=model,
+        ) as connection:
 
-    if not endpoint:
-        raise RuntimeError("AZURE_VOICELIVE_ENDPOINT is missing")
+            print("\n================================")
+            print("SUCCESS: Connected to Azure Voice Live!")
+            print("================================")
 
-    if not api_key:
-        raise RuntimeError("AZURE_VOICELIVE_API_KEY is missing")
-
-    print("Endpoint:", endpoint)
-    print("Model:", model)
-    print("API Version:", api_version)
-    print("Region: Korea Central")
-    print("Connecting to Voice Live...")
-
-    async with connect(
-        endpoint=endpoint,
-        credential=AzureKeyCredential(api_key),
-        model=model,
-        api_version=api_version,
-    ) as connection:
-
-        print()
-        print("======================================")
-        print("VOICE LIVE CONNECTION SUCCESSFUL!")
-        print("======================================")
-        print("Model:", model)
-        print("Region: Korea Central")
-        print("API Version:", api_version)
-
-    print("Connection closed.")
+    except Exception as e:
+        print("\n================================")
+        print("CONNECTION FAILED")
+        print("================================")
+        print("Error type:", type(e).__name__)
+        print("Error:", str(e))
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(main())
