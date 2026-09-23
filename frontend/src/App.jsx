@@ -3,11 +3,13 @@ import Home from "./pages/Home.jsx";
 import Ledger from "./pages/Ledger.jsx";
 import Ask from "./pages/Ask.jsx";
 import Risk from "./pages/Risk.jsx";
+import { ShopkeeperProvider } from "./context/ShopkeeperContext.jsx";
 
 const navLinkClass = ({ isActive }) => `nav-link ${isActive ? "active" : ""}`;
 
 export default function App() {
   return (
+    <ShopkeeperProvider>
     <BrowserRouter>
       <div className="app-shell">
         <header className="navbar">
@@ -33,5 +35,6 @@ export default function App() {
         </main>
       </div>
     </BrowserRouter>
+    </ShopkeeperProvider>
   );
 }

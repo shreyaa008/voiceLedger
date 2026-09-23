@@ -2,10 +2,11 @@
 import EntryRecorder from "../components/EntryRecorder.jsx";
 import Toast from "../components/Toast.jsx";
 import { deleteTransaction } from "../services/api";
-import { DEMO_SHOPKEEPER_ID } from "../config";
+import { useShopkeeper } from "../context/ShopkeeperContext.jsx";
 
 
 export default function Home() {
+  const shopkeeper = useShopkeeper();
   const [sessionLog, setSessionLog] = useState([]);
   const [toast, setToast] = useState(null); // { message, actionLabel, onAction }
 
@@ -76,7 +77,7 @@ export default function Home() {
       </div>
 
       <EntryRecorder
-        shopkeeperId={DEMO_SHOPKEEPER_ID}
+        shopkeeperId={shopkeeper.id}
         onSaved={handleSaved}
         onMissed={handleMissed}
         onError={handleError}

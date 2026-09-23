@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { deleteTransaction, getCustomerLedger, updateTransaction } from "../services/api";
+import { useShopkeeper } from "../context/ShopkeeperContext.jsx";
 import { formatINR } from "../utils/format";
 import LedgerList from "./LedgerList.jsx";
 import RiskBadge from "./RiskBadge.jsx";
@@ -7,28 +8,29 @@ import Spinner from "./Spinner.jsx";
 
 // Slide-up sheet with one customer's full history.
 export default function CustomerLedgerSheet({ customer, onClose, onRemind }) {
+  const shopkeeper = useShopkeeper();
   const [transactions, setTransactions] = useState(null);
   const [error, setError] = useState(null);
   const [actionError, setActionError] = useState(null);
 
   const loadLedger = useCallback(() => {
     setError(null);
-    return getCustomerLedger(customer.id)
+    return getCustomerLedger(customer.id, shopkeeper.id)
       .then((res) => setTransactions(res.transactions))
       .catch((err) => setError(err.message));
-  }, [customer.id]);
+  }, [customer.id, shopkeeper.id]);
 
   useEffect(() => {
     let cancelled = false;
     setTransactions(null);
     setError(null);
-    getCustomerLedger(customer.id)
+    getCustomerLedger(customer.id, shopkeeper.id)
       .then((res) => !cancelled && setTransactions(res.transactions))
       .catch((err) => !cancelled && setError(err.message));
     return () => {
       cancelled = true;
     };
-  }, [customer.id]);
+  }, [customer.id, shopkeeper.id]);
 
   async function handleEdit(transaction, updates) {
     setActionError(null);
