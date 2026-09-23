@@ -1,6 +1,7 @@
 ﻿import { useEffect, useRef, useState } from "react";
 import { VoiceLiveClient } from "../services/voiceLive";
 import { WS_BASE } from "../services/api";
+import { supabase } from "../services/supabaseClient";
 
 const TOOL_LABELS = {
   get_customer_ledger: (args) => `${args?.customer_name || "Customer"} ka ledger check kar raha hoon...`,
@@ -15,7 +16,7 @@ const TOOL_LABELS = {
  * to Voice Live over /ws/voice, and shows the conversation as chat bubbles
  * while the mic stays open — mirrors the reference app's call UI.
  */
-export default function AskAssistant({ onClose, shopkeeperId }) {
+export default function AskAssistant({ onClose }) {
   const [messages, setMessages] = useState([]); // { role: 'user' | 'assistant', text }
   // connecting -> connected -> ready -> (disconnected | error)
   const [status, setStatus] = useState("connecting");
@@ -27,49 +28,67 @@ export default function AskAssistant({ onClose, shopkeeperId }) {
   const scrollRef = useRef(null);
 
   useEffect(() => {
+    let cancelled = false;
     setStatus("connecting");
     setErrorMsg(null);
 
-    // shopkeeper_id must travel with the WebSocket connection itself (there's
-    // no per-message auth on this socket), so it goes as a query param — the
-    // backend reads it in voice_ws() and threads it through every MCP tool
-    // call. Without this, get_customer_ledger/check_risk/etc. all fail with
-    // "No shopkeeper session" and the assistant apologizes instead of
-    // answering (see backend/app/routers/voice_live.py).
-    const client = new VoiceLiveClient({
-      wsUrl: `${WS_BASE}/ws/voice?shopkeeper_id=${encodeURIComponent(shopkeeperId || "")}`,
-      onStatusChange: setStatus,
-      onTranscript: (text) => {
-        if (!text?.trim()) return;
-        setMessages((prev) => [...prev, { role: "user", text }]);
-      },
-      onAssistantText: (text) => {
-        if (!text?.trim()) return;
-        setToolActivity(null);
-        setMessages((prev) => [...prev, { role: "assistant", text }]);
-      },
-      onToolActivity: (evt) => {
-        if (evt.type === "tool_call") {
-          const label = TOOL_LABELS[evt.name]?.(evt.arguments) || "Checking...";
-          setToolActivity(label);
-        } else {
-          setToolActivity(null);
-        }
-      },
-      onError: (msg) => {
+    async function connect() {
+      // The Supabase Auth access token must travel with the WebSocket
+      // connection itself (there's no per-message auth on this socket,
+      // and browsers can't set a custom Authorization header on a WS
+      // handshake), so it goes as a query param — the backend verifies
+      // it in voice_ws() and resolves it to the caller's own
+      // shopkeeper_id server-side, then threads that through every MCP
+      // tool call (see backend/app/routers/voice_live.py). A shopkeeper
+      // can never end up asking questions about another shopkeeper's
+      // data this way.
+      const { data, error } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (error || !data?.session?.access_token) {
         setStatus("error");
-        setErrorMsg(msg);
-      },
-    });
+        setErrorMsg("You're not signed in. Please log in again.");
+        return;
+      }
 
-    clientRef.current = client;
-    client.start();
+      const client = new VoiceLiveClient({
+        wsUrl: `${WS_BASE}/ws/voice?token=${encodeURIComponent(data.session.access_token)}`,
+        onStatusChange: setStatus,
+        onTranscript: (text) => {
+          if (!text?.trim()) return;
+          setMessages((prev) => [...prev, { role: "user", text }]);
+        },
+        onAssistantText: (text) => {
+          if (!text?.trim()) return;
+          setToolActivity(null);
+          setMessages((prev) => [...prev, { role: "assistant", text }]);
+        },
+        onToolActivity: (evt) => {
+          if (evt.type === "tool_call") {
+            const label = TOOL_LABELS[evt.name]?.(evt.arguments) || "Checking...";
+            setToolActivity(label);
+          } else {
+            setToolActivity(null);
+          }
+        },
+        onError: (msg) => {
+          setStatus("error");
+          setErrorMsg(msg);
+        },
+      });
+
+      if (cancelled) return;
+      clientRef.current = client;
+      client.start();
+    }
+
+    connect();
 
     return () => {
+      cancelled = true;
       clientRef.current?.stop();
       clientRef.current = null;
     };
-  }, [attempt, shopkeeperId]);
+  }, [attempt]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });

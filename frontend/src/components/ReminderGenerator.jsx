@@ -1,6 +1,5 @@
 ﻿import { useEffect, useState } from "react";
 import { generateReminder } from "../services/api";
-import { useShopkeeper } from "../context/ShopkeeperContext.jsx";
 import { formatINR } from "../utils/format";
 import Spinner from "./Spinner.jsx";
 
@@ -24,7 +23,6 @@ function whatsappLink(phone, text) {
 
 // Pop-up: choose tone + language, get a message, copy it or open WhatsApp.
 export default function ReminderGenerator({ customer, onClose }) {
-  const shopkeeper = useShopkeeper();
   const [tone, setTone] = useState("polite");
   const [language, setLanguage] = useState("hi");
   const [text, setText] = useState("");
@@ -39,7 +37,7 @@ export default function ReminderGenerator({ customer, onClose }) {
     setError(null);
     setCopied(false);
 
-    generateReminder(shopkeeper.id, customer.id, tone, language)
+    generateReminder(customer.id, tone, language)
       .then((res) => {
         if (!cancelled) setText(res.reminder_text);
       })
@@ -53,7 +51,7 @@ export default function ReminderGenerator({ customer, onClose }) {
     return () => {
       cancelled = true;
     };
-  }, [customer.id, tone, language, shopkeeper.id]);
+  }, [customer.id, tone, language]);
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();

@@ -23,7 +23,7 @@ import os
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 
 from azure.core.credentials import AzureKeyCredential
@@ -51,6 +51,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from agent.mcp_server import list_tools, call_tool
 from agent.agent_config import get_system_prompt
+from app.services.auth import shopkeeper_id_for_user, verify_access_token
 
 load_dotenv()
 router = APIRouter()
@@ -204,12 +205,34 @@ async def voice_ws(websocket: WebSocket):
     # get_business_summary) fell back to call_tool()'s shopkeeper_id=None
     # default and returned {"error": "No shopkeeper session — cannot look
     # up data."} — which the model then turned into a graceful-sounding
-    # apology. The frontend sends it as a query param (see
-    # frontend/src/components/AskAssistant.jsx); everything else about the
-    # audio/WebSocket pipeline is unchanged.
-    shopkeeper_id = websocket.query_params.get("shopkeeper_id")
+    # apology.
+    #
+    # shopkeeper_id is never trusted directly from the browser anymore.
+    # Browsers can't set a custom Authorization header on a WebSocket
+    # handshake, so the frontend sends the Supabase Auth access token as a
+    # query param instead (see frontend/src/components/AskAssistant.jsx);
+    # this backend verifies that token with Supabase itself and resolves
+    # it to the caller's own shopkeeper_id — the exact same check every
+    # HTTP route performs via app.services.auth.get_current_shopkeeper_id.
+    token = websocket.query_params.get("token")
+    if not token:
+        await _fail(websocket, "Missing access token — cannot start a scoped Voice Live session.")
+        return
+
+    try:
+        user = verify_access_token(token)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, str) else "Invalid or expired session."
+        await _fail(websocket, detail, code=4401)
+        return
+
+    shopkeeper_id = shopkeeper_id_for_user(user.id)
     if not shopkeeper_id:
-        await _fail(websocket, "Missing shopkeeper_id — cannot start a scoped Voice Live session.")
+        await _fail(
+            websocket,
+            "No shopkeeper linked to this account yet. Call POST /shopkeepers/bootstrap first.",
+            code=4404,
+        )
         return
 
     endpoint = os.getenv("AZURE_VOICELIVE_ENDPOINT")

@@ -10,7 +10,7 @@ endpoint can never answer with, or act on, another shopkeeper's data.
 import re
 import sys
 from pathlib import Path
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional
 
@@ -21,13 +21,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from agent.mcp_server import call_tool
 from agent.agent_config import run_foundry_agent
+from app.services.auth import get_current_shopkeeper_id
 
 router = APIRouter()
 
 
 class AskRequest(BaseModel):
     question: str
-    shopkeeper_id: str  # required — Ask must always be scoped to one shopkeeper
     language: Optional[str] = "hi"
 
 
@@ -190,7 +190,12 @@ def process_agent_query(question: str, language: str, shopkeeper_id: str) -> dic
 
 
 @router.post("/ask")
-async def ask(payload: AskRequest):
+async def ask(
+    payload: AskRequest,
+    shopkeeper_id: str = Depends(get_current_shopkeeper_id),
+):
     """Handle a shopkeeper's voice/text question via the Agent and
-    read-only MCP tools, scoped to their own data."""
-    return process_agent_query(payload.question, payload.language or "hi", payload.shopkeeper_id)
+    read-only MCP tools, scoped to their own data. shopkeeper_id comes
+    exclusively from the authenticated session now — never the request
+    body — so Ask can never be pointed at another shopkeeper's data."""
+    return process_agent_query(payload.question, payload.language or "hi", shopkeeper_id)

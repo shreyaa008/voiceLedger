@@ -1,66 +1,68 @@
 """
-Per-shopkeeper identity — the fix for the shared-ledger data-isolation bug.
+Shopkeeper identity — linking a real Supabase Auth user to their
+`shopkeepers` row.
 
-Root cause (see docs/README.md or the PR description): the frontend never
-had a real login. Every browser used the same hardcoded
-DEMO_SHOPKEEPER_ID, so two different shopkeepers were, as far as the
-database was concerned, literally the same shopkeeper — every table was
-already correctly scoped by shopkeeper_id, there was just only ever one
-of them in use.
+Replaces the old per-device "identify by phone number" stand-in
+(POST /shopkeepers/identify), which trusted whatever name/phone the
+frontend sent and let any client claim any shopkeeper_id. That endpoint
+is gone. From here on, a shopkeeper_id is only ever produced by
+app.services.auth.get_current_shopkeeper_id(), which resolves the
+signed-in Supabase Auth user to their own shopkeepers.user_id — never
+something a client sends directly.
 
-There is no auth system in this project yet (no Supabase Auth, no
-sessions/JWTs anywhere in the codebase), so this endpoint is the
-smallest safe stand-in: a shopkeeper identifies themselves once by phone
-number, we get-or-create their row in the existing `shopkeepers` table
-(phone is already UNIQUE in schema.sql), and the frontend remembers that
-id on-device from then on. Same phone -> same shopkeeper_id, even across
-devices; a different phone -> a different, properly isolated shopkeeper.
+  POST /shopkeepers/bootstrap  — call once, right after sign up (or first
+                                  login on a fresh account): get-or-create
+                                  the shopkeepers row for the signed-in
+                                  user.
+  GET  /shopkeepers/me         — fetch the signed-in user's shopkeeper
+                                  profile; 404 if bootstrap hasn't run yet.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.services.auth import AuthedUser, get_current_user
 from app.services.supabase_client import supabase
 
 router = APIRouter(prefix="/shopkeepers", tags=["shopkeepers"])
 
 
-class ShopkeeperIdentify(BaseModel):
+class BootstrapRequest(BaseModel):
     name: str
-    phone: str
+    phone: str | None = None
     preferred_language: str | None = "hi"
 
 
-@router.post("/identify")
-async def identify_shopkeeper(payload: ShopkeeperIdentify):
-    """Get-or-create a shopkeeper by phone number. Safe to call every time
-    the app loads — returns the same row for a phone that already exists
-    instead of creating a duplicate."""
-    phone = payload.phone.strip()
-    name = payload.name.strip()
-
-    if not phone:
-        raise HTTPException(status_code=400, detail="Phone number is required")
-    if not name:
-        raise HTTPException(status_code=400, detail="Name is required")
-
+@router.post("/bootstrap")
+async def bootstrap_shopkeeper(
+    payload: BootstrapRequest,
+    user: AuthedUser = Depends(get_current_user),
+):
+    """Get-or-create the shopkeeper row for the signed-in Supabase Auth
+    user. Idempotent/safe to call every time the app loads — returns the
+    existing row for this user_id instead of creating a duplicate."""
     try:
         existing = (
             supabase
             .table("shopkeepers")
             .select("id, name, phone, preferred_language")
-            .eq("phone", phone)
+            .eq("user_id", user.id)
             .limit(1)
             .execute()
         )
         if existing.data:
             return {"shopkeeper": existing.data[0]}
 
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Name is required")
+
         created = (
             supabase
             .table("shopkeepers")
             .insert({
+                "user_id": user.id,
                 "name": name,
-                "phone": phone,
+                "phone": (payload.phone or "").strip() or None,
                 "preferred_language": payload.preferred_language or "hi",
             })
             .execute()
@@ -69,6 +71,30 @@ async def identify_shopkeeper(payload: ShopkeeperIdentify):
             raise HTTPException(status_code=500, detail="Could not create shopkeeper")
 
         return {"shopkeeper": created.data[0]}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/me")
+async def get_my_shopkeeper(user: AuthedUser = Depends(get_current_user)):
+    """The shopkeeper profile linked to the signed-in user. 404 means
+    bootstrap hasn't been called yet for this account (e.g. right after
+    sign up, before the frontend's onboarding step runs)."""
+    try:
+        existing = (
+            supabase
+            .table("shopkeepers")
+            .select("id, name, phone, preferred_language")
+            .eq("user_id", user.id)
+            .limit(1)
+            .execute()
+        )
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="No shopkeeper linked to this account yet")
+        return {"shopkeeper": existing.data[0]}
 
     except HTTPException:
         raise

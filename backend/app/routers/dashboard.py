@@ -1,17 +1,19 @@
 """
 Endpoints behind the Ledger and Risk screens.
 
-  GET  /dashboard/summary?shopkeeper_id=...   every customer + balance + risk (2 DB queries total)
-  POST /dashboard/reminder                    ready-to-send payment reminder text
+  GET  /dashboard/summary                      every customer + balance + risk (2 DB queries total),
+                                                 scoped to the signed-in shopkeeper via Authorization: Bearer
+  POST /dashboard/reminder                      ready-to-send payment reminder text
 
 A single customer's entries still come from the existing
 GET /customers/{customer_id}/ledger endpoint.
 """
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.services.auth import get_current_shopkeeper_id
 from app.services.ledger_data import fetch_customers, fetch_transactions
 from app.services.risk import reminder_text, summarize
 from app.services.supabase_client import supabase
@@ -20,7 +22,7 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
 @router.get("/summary")
-async def dashboard_summary(shopkeeper_id: str):
+async def dashboard_summary(shopkeeper_id: str = Depends(get_current_shopkeeper_id)):
     try:
         customers = fetch_customers(shopkeeper_id)
 
@@ -69,20 +71,22 @@ async def dashboard_summary(shopkeeper_id: str):
 
 
 class ReminderRequest(BaseModel):
-    shopkeeper_id: str
     customer_id: str
     tone: Literal["polite", "standard", "firm"] = "polite"
     language: Literal["hi", "en"] = "hi"
 
 
 @router.post("/reminder")
-async def make_reminder(req: ReminderRequest):
+async def make_reminder(
+    req: ReminderRequest,
+    shopkeeper_id: str = Depends(get_current_shopkeeper_id),
+):
     try:
         found = (
             supabase.table("customers")
             .select("id, name, phone")
             .eq("id", req.customer_id)
-            .eq("shopkeeper_id", req.shopkeeper_id)
+            .eq("shopkeeper_id", shopkeeper_id)
             .limit(1)
             .execute()
             .data
