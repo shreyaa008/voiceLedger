@@ -136,7 +136,7 @@ voiceledger/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/<your-org>/voiceledger.git
+git clone https://github.com/shreyaaa008/voiceledger.git
 cd voiceledger
 ```
 
